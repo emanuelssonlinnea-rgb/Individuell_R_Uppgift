@@ -1,0 +1,169 @@
+---
+title: "Rapport"
+format:
+  html:
+    toc: true
+    number-sections: true
+    theme: cosmo
+lang: sv
+editor: visual
+author: "Linnéa Emanuelsson"
+---
+
+```{r}
+#| include: false
+library(tidyverse)
+library(here)
+source("../script/R_Uppgift_Linnea_Emanuelsson.R")
+```
+
+
+# Syfte
+
+Ett försäkringsbolag har beställt en analys av deras historiska kunddata i syfte att undersöka vilka variabler som påverkar försäkringskostnaderna mest. Målet är att utreda datan och genomföra en regressionsanalys som förhoppningsvis kan användas som beslutsstöd för framtida kunder.
+
+# Metod
+## Dataförståelse
+Datasetet består av 1100 observationer och 14 variabler. 
+Av dessa 14 variabler är hälften numeriska och den andra hälften kategoriska.
+```{r}
+#| echo: false
+glimpse(raw_data)
+```
+
+
+## Datastädning och förberedelse
+
+### Saknade värden
+```{r}
+#| echo: false
+raw_data %>% 
+  filter(is.na(bmi) | is.na(exercise_level) | is.na(annual_checkups))
+```
+Datasetet har 3 kolumner med saknade värden: exercise_level (22) som är kategorisk, samt två numeriska variabler: annual_checkups(20)och bmi(28). Med tanke på att  datasetet inte är så stort (består av 1100 observationer och 14 variabler) och att antalen saknade värdena är så få så lades prio på att ha kvar dem raderna vi kunde. Dem numeriska saknade värdena hanterades genom att inputera medianen av värdena, medan dem kategoriska (exercise_level) hanterades genom att skapa en egen kategori för saknade värden = missing. 
+
+### Nya variabler
+2 nya variabler skapades - det tillåter en lättare jämförelse mellan grupper och prissättningen, det ger en tydligare beskrivning när man jämför relationer, jobbar med regressionsmodeller samt för att se skillnaden mellan dem olika grupperna i visualiseringarna.
+- bmi_group - skillnaden mellan min och max värdet av bmi användes för att sedan dela upp siffrorna i 3 lika kategorier: lower(17-26), average(27-35) & higher(36-44)
+- age_group - här använde jag mig av age och delade upp siffrorna i klassiska åldersgrupper för att lättare kunna identifiera trender mellan grupper med liknande situationer - youth(18-24), adult(25-59), senior(60+) 
+
+## Beskrivande analys
+Med tanke på att vi har flera variabler att jämföra så har jag delat upp analysen i numeriska och kategoriska variabler:
+
+### Numeriska variabler
+Dem numeriska variablerna (age,bmi,children,prior_accidents,prior_claims,annual_checkups) jämfördes i en korrelations heatmap mot charges för att utreda vilka variabler hade starkast relation till försäkringskostnaderna (@fig-heatmap).
+
+```{r}
+#| echo: false
+#| label: fig-heatmap
+#| fig-cap: "Numerical predictors heatmap."
+
+
+
+  ggplot(corr_long, aes(x = var1, y = var2, fill = correlation)) +
+    geom_tile(color = "white") +
+    scale_fill_gradient2(
+      low = "blue", high = "red", mid = "white",
+      midpoint = 0, limit = c(-1, 1), space = "Lab"
+    ) +
+    theme_minimal() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(
+      title = "Correlation Heatmap",
+      x = "",
+      y = "",
+      fill = "Correlation"
+    )
+```
+
+Heatmappen visar att dem numeriska variablerna med högst korrelation till charges är age( 0.26), prior_accidents (0.24) och prior_claims (0.18). Det betyder att dessa 3 variabler borde inkluderas i en prediktiv model även om korrelationerna inte är väldigt höga (ligger under 0.5), vilket kan innebära att korrelationen blir starkare ihop med visa kategoriska variabler. 
+
+### Kategoriska variabler
+För kategoriska variabler (sex, region, smoker,  chronic_condition, exercise_level, plan_type, bmi_group, age_group)skapades en funktion som kalkylerade varje prediktors relatiion charges genomsnitt, median och standard deviation samt skapade en boxplot som visade relationen. Rankning på dem starkaste kategoriska prediktorerna är smoker på första plats, följt av chronic_condition. Sedan har vi andra ganska starka prediktorer som exercise_level, age_group och plan_type.
+Med tanke på att dem kategoriska variablerna var så tydligt starkare än dem numeriska, valde jag att gå vidare med följande: smoker, chronic_condition, exercise_level, age_group och plan_type.
+```{r}
+#| echo: false
+library(patchwork)
+
+
+p1 <- analyze_costs(ready_data, smoker)$plot
+p2 <- analyze_costs(ready_data, chronic_condition)$plot
+p3 <- analyze_costs(ready_data, exercise_level)$plot
+p4 <- analyze_costs(ready_data, age_group)$plot
+
+((p1 + p2) / (p3 + p4)) + patchwork::plot_annotation(title = "Boxplots of Categorical Predictors")
+
+
+```
+# Regressionsanalys
+### Linjär regressionsmodel
+Jag började med en linjär regressionsmodell av dem 5 starkaste prediktorerna jag hade hittat: smoker, chronic_condition, exercise_level, age_group och plan_type.
+```{r}
+#| echo: false
+model_linear_focus <- summary(model_linear_focus)
+model_linear_focus
+```
+Smoker och chronic_condition har dem högsta koefficienterna av dem 5 prediktorerna som valdes ut.
+Multiple R-squared ligger på 0.68 vilket skulle kunna förbättras, så med tanke på det och i syfte att se att ingen annan prediktor missats skapade jag en andra linjär regression med alla variabler.
+
+```{r}
+#| echo: false
+model_linear_all <- summary(model_linear_all)
+model_linear_all
+```
+Residual standard error har nu gått ner från 2594 till 2313 vilket visar på att tillagda variabler ger lite mer precision i beräkningarna inte bara noise.
+Multiple R-squared har nu gått upp från 0.68 till 0.75 vilket innebär att modellen är något starkare än i första versionen.
+Koefficienterna visar liknande trender som tidigare - rökare med kronisk sjukdom, som inte tränar mycket och har premium paket betalar högst. 
+En variabel som inte visade sig ha lika stor betydelse som trott är age_group. 
+Istället visade sig 2 andra prediktorer ha högre påverkan på charges: prior_accidents och prior_claims. 
+Detta ändrade mitt perspektiv om vilka dem topp prediktorerna egentligen var - så jag ändrade det från smoker, chronic_condition, exercise_level, age_group och plan_type till smoker, chronic_condition, exercise_level, prior_accidents, prior_claims och plan_type i en ny modell. 
+
+### Lasso regressionsmodell
+Den första modellen - linjär regression är enkel och lätt att tolka som modell men den har hög risk för overfitting samt att den inte hanterar multikollinearitet väl. För att inte riskera att missa dessa faktorer så valde jag att testa ytterligare regressionsmodeller - lasso regression, som valdes för att:
+- Lasso krymper orelevanta koefficienter till noll
+- Bra på att identifiera starkaste prediktorer
+- Bättre på att identifiera när variabler är korrelerade än linjär regression.
+
+```{r}
+#| echo: false
+model_lasso_all <- summary(model_lasso)
+model_lasso_all
+```
+
+### Modelljämförelse
+Målet är att välja en regressionsmodell som kan användas som stöd vid framtida prissättning med liknande kunder.
+Med det i åtanke ville jag nu testa dem fyra modellernas prediktionsförmåga genom att dela upp datan i test och train set och sedan jämföra RMSE, MAE & R2.
+
+# Resultat
+```{r}
+#| echo: false
+model_comparison
+```
+När man jämför dem linjära och lasso modellerna är skillnaderna försumbara.Detta betyder att datasetet är stabilt och att korrelationerna mellan variablerna inte var så komplexa att dem inte kunde fångas up av en linjär regressionsmodell.
+Anledningen kan vara att vi inte har så många variabler och att korrelationerna mellan dem inte är så komplexa.
+Resultaten visar att dem fulla modellerna med alla prediktorer presterar bättre än fokusmodellerna vilket är fullt rimligt. 
+Fokusvariablerna som valdes gav omkring 71.5% av variationen i charges vilket är ganska bra, när man tänker på att i modellerna med fulla variabler så var resultatet 75%.
+Det visar att fokus prediktorerna som valdes var dem som hade högst påverkan på försäkringskostnaden.
+
+# Slutsatser
+Dem starkaste prediktorerna av försäkringskostnader var smoker, chronic_condition, exercise_level, prior_accidents, prior_claims och plan_type. Detta bekräftades av både graferna (boxplots och heatmap) samt av regressionsmodellerna.
+Sammantaget pekar resultaten på att livsstilsfaktorer (som rökning och träningsnivå), medicinska faktorer (chronic_condition) och tidigare skadehistorik är centrala drivkrafter bakom försäkringskostnaderna.
+
+# Begränsningar
+För att börja med så var datasetet relativt litet så skulle behöva utökas med fler observationer samt mer variabler för en bättre helhetsbild - vi skulle kunna få in faktorer som inkomst, utbildningsnivå, etc.
+Vi hade 2 kolumner med saknade värden som hanterades genom att inputera medianen vilket i situationen är rimligt men kan påverka precision. Den tredje kolumnen som saknade värden hanterades genom att skapa en ny kategori - "Missing" så vi kunde ha kvar observationerna. Än en gång - rimlig lösning men svårt att analysera datan i efterhand.
+2 nya variabler skapades - bmi_group som baserades på att dela upp siffrorna lika i 3 grupper (lower, average, higher) och  age_group som baserade sig på klassiska åldersgrupper som använts i hälsostudier (youth, adult, senior). Dessa grupperingar underlättar analys men kan förenkla verkligheten såpass att den döljer variationer inom grupperna.
+Linjär regressionsmodellen förutsätter linjära samband, normalfördelade residualer och homogen varians. Den har hög risk för overfitting samt att den inte hanterar multikollinearitet väl. Ett alternativ var då att använda mig av lasso-modellen men den är känslig för skalning och korrelation vilket kan innebära att starkt korrelerade prediktorer påverkar vilka variabler som väljs bort.
+
+
+# Rekommendationer
+Nästa steg i projektet skulle kunna vara att samla in fler relevanta variabler som nämndes innan samt att utöka antalet observationer.
+Man skulle även kunna testa datan på icke-linjära modeller som Random Forest för att fånga komplexa samband vilket annars kan missas. 
+I samma veva skulle man även kunna validera modellen på ett helt nytt dataset för att se om overfitting var ett problem.
+Ett möjligt fokusområde kunde vara att undersöka interaktionseffekter mellan olika variabler för potentiellt viktiga insikter i kundbefolkningen. Exempelvis relationen mellan rökare och träningsnivå eller ålder och bmi.
+
+
+# Självreflektion
+Projektet var kul men jag kände mig lite osäker hur man bäst analyserade alla möjliga prediktorer så min beskrivande analys kan absolut förbättras vilket påvisades i regressionsanalys delen där jag märkte att jag valt fel prediktorer att fokusera på. Den här delen tyckte jag var svårast speciellt med skillnaderna i hur man kan analysera numeriska och kategoriska variabler.
+Själva regressionanalys delen tyckte jag var kul och ville testa lite olika modeller för att se om jag kunde få ett bättre resultat genom lasso regression. Jag tror jag har uppfyllt kraven för VG genom att analysera dem olika modellerna, dess styrkor och svagheter samt testa alternativ för att se om jag kunde hitta något annorlunda. 
+
