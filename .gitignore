@@ -1,0 +1,34 @@
+# R session files
+.Rhistory
+.Rapp.history
+
+# RStudio files
+.Rproj.user/
+*.Rproj
+
+# Quarto and R Markdown output
+*_files/
+*.html
+*.pdf
+*.docx
+
+# Cache and temporary files
+cache/
+*_cache/
+*.utf8.md
+*.knit.md
+
+# Output folders
+output/
+report/output/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary editor files
+~$*
+*.tmp
